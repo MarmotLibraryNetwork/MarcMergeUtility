@@ -1,5 +1,6 @@
 package com.peakc.marmot;
 
+import au.com.bytecode.opencsv.CSVReader;
 import org.apache.log4j.Logger;
 import org.ini4j.Ini;
 import org.marc4j.MarcPermissiveStreamReader;
@@ -8,10 +9,8 @@ import org.marc4j.MarcStreamWriter;
 import org.marc4j.marc.ControlField;
 import org.marc4j.marc.Record;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+
+import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -21,6 +20,8 @@ import java.util.*;
  * User: Mark Noble
  * Date: 12/31/2014
  * Time: 11:45 AM
+ *
+ *
  */
 public class MergeMarcUpdatesAndDeletes {
 	private String recordNumberTag = "";
@@ -85,17 +86,7 @@ public class MergeMarcUpdatesAndDeletes {
 					for (File updateFile : updateFiles) {
 
 						try {
-							FileInputStream marcFileStream = new FileInputStream(updateFile);
-							MarcReader updatesReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
-
-							//Read a list of records in the updates file
-							while (updatesReader.hasNext()) {
-								Record curBib = updatesReader.next();
-								String recordId = getRecordIdFromMarcRecord(curBib);
-								if (recordsToUpdate != null)
-									recordsToUpdate.put(recordId, curBib);
-							}
-							marcFileStream.close();
+							processMarcFile(marcEncoding, recordsToUpdate, updateFile);
 						} catch (Exception e) {
 
 							logger.error("Error loading records from updates fail", e);
@@ -108,19 +99,13 @@ public class MergeMarcUpdatesAndDeletes {
 
 					for (File deleteFile : deleteFiles) {
 						try {
-							FileInputStream marcFileStream = new FileInputStream(deleteFile);
-							MarcReader deletesReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
-
-							while (deletesReader.hasNext()) {
-								Record curBib = deletesReader.next();
-								String recordId = getRecordIdFromMarcRecord(curBib);
-								/*BasicMarcInfo marcInfo = new BasicMarcInfo();
-								marcInfo.load(curBib,logger);
-								String recordId = marcInfo.getId();*/
-								recordsToDelete.add(recordId);
+							if(deleteFile.getName().endsWith("mrc") ||deleteFile.getName().endsWith("marc") ){
+								processMarcFile(marcEncoding, recordsToDelete, deleteFile);
+							}else if (deleteFile.getName().endsWith("csv")){
+								processCsvFile(marcEncoding, recordsToDelete, deleteFile);
 							}
 
-							marcFileStream.close();
+
 						} catch (Exception e) {
 							logger.error("Error processing deletes file", e);
 							errorOccurred = true;
@@ -182,14 +167,8 @@ public class MergeMarcUpdatesAndDeletes {
 
 					if (!errorOccurred) {
 						for (File updateFile : updateFiles) {
-
-							//Move to the backup directory
-						/*	if (!updateFile.renameTo(new File(backupPath + "/" + updateFile.getName()))) {
-								logger.error("Unable to move updates file " + updateFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + updateFile.getName());
-								errorOccurred = true;
-							}
-							*/
 							try {
+								//Move to the backup directory
 								Util.copyFileNoOverwrite(updateFile, new File(backupPath ));
 							} catch (IOException e) {
 								logger.error("Unable to move updates file " + updateFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + updateFile.getName());
@@ -204,15 +183,11 @@ public class MergeMarcUpdatesAndDeletes {
 
 						for (File deleteFile : deleteFiles) {
 							//Move to the backup directory
-							/*if (!deleteFile.renameTo(new File(backupPath + "/" + deleteFile.getName()))) {
-								logger.error("Unable to move deletion file to backup directory");
-								errorOccurred = true;
-							}*/
 							try {
 								Util.copyFileNoOverwrite(deleteFile,new File(backupPath )) ;
 							}
 							catch (IOException e) {
-								logger.error("Unable to move updates file " + deleteFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + deleteFile.getName());
+								logger.error("Unable to move delete file " + deleteFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + deleteFile.getName());
 								errorOccurred = true;
 							}
 							if(!errorOccurred){
@@ -237,6 +212,9 @@ public class MergeMarcUpdatesAndDeletes {
 						}
 
 						if(!errorOccurred)
+
+							
+
 
 						if (!mainFile.renameTo(new File(backupPath + "/" + mainFile.getName()))) {
 							logger.error("Unable to move main file " + mainFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + mainFile.getName());
@@ -266,22 +244,53 @@ public class MergeMarcUpdatesAndDeletes {
 		return  errorOccurred;
 	}
 
+	private void processCsvFile(String marcEncoding, HashSet<String> recordsToDelete, File deleteFile) throws IOException {
+
+		CSVReader reader = new CSVReader(new FileReader(deleteFile.getPath()));
+		String [] nextLine;
+		while ((nextLine = reader.readNext()) != null) {
+			recordsToDelete.add(nextLine[0]);
+		}
+
+		reader.close();
+	}
+	private void processMarcFile(String marcEncoding, HashSet<String> recordsToDelete, File deleteFile) throws IOException {
+		FileInputStream marcFileStream = new FileInputStream(deleteFile);
+		MarcReader deletesReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
+
+		while (deletesReader.hasNext()) {
+            Record curBib = deletesReader.next();
+            String recordId = getRecordIdFromMarcRecord(curBib);
+            if (recordId != null)
+                recordsToDelete.add(recordId);
+        }
+
+
+		marcFileStream.close();
+	}
+
+	private void processMarcFile(String marcEncoding, HashMap<String, Record> recordsToUpdate, File updateFile) throws IOException {
+		FileInputStream marcFileStream = new FileInputStream(updateFile);
+		MarcReader updatesReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
+
+		//Read a list of records in the updates file
+		while (updatesReader.hasNext()) {
+            Record curBib = updatesReader.next();
+            String recordId = getRecordIdFromMarcRecord(curBib);
+
+            if (recordsToUpdate != null)
+                recordsToUpdate.put(recordId, curBib);
+        }
+		marcFileStream.close();
+	}
 
 
 	private String getRecordIdFromMarcRecord(Record marcRecord) {
 
 		recordNumberPrefix="";
 		List<ControlField> recordIdField = getDataFields(marcRecord, recordNumberTag);
-		//Make sure we only get one ils identifier
+		//Make sure we only get one identifier
 		for (ControlField curRecordField : recordIdField) {
-
-			/*Subfield subfieldA = curRecordField.getSubfield('a');
-			if (subfieldA != null && (recordNumberPrefix.length() == 0 || subfieldA.getData().length() > recordNumberPrefix.length())) {
-				if (curRecordField.getSubfield('a').getData().substring(0, recordNumberPrefix.length()).equals(recordNumberPrefix)) {
-					return curRecordField.getSubfield('a').getData();
-				}
-			}
-			*/
 
 			return  curRecordField.getData();
 		}
@@ -300,6 +309,18 @@ public class MergeMarcUpdatesAndDeletes {
 		}
 		return variableFieldsReturn;
 	}
+
+	private String processCsvFile(){
+
+		CSVReader reader = new CSVReader(new FileReader("yourfile.csv"));
+		String [] nextLine;
+		while ((nextLine = reader.readNext()) != null) {
+			// nextLine[] is an array of values from the line
+			System.out.println(nextLine[0] + nextLine[1] + "etc...");
+		}
+
+	}
+
 
 }
 
