@@ -301,7 +301,6 @@ public class MergeMarcUpdatesAndDeletes {
 		List<ControlField> variableFieldsReturn = new ArrayList<>();
 		for (Object variableField : variableFields){
 			if (variableField instanceof ControlField){
-				/*return ((ControlField) variableField).getData();*/
 				variableFieldsReturn.add((ControlField)variableField);
 			}
 		}
