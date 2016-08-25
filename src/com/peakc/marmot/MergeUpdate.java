@@ -1,16 +1,22 @@
 package com.peakc.marmot;
 
 import org.apache.log4j.Logger;
+import org.apache.log4j.PropertyConfigurator;
 import org.ini4j.Ini;
 import org.ini4j.InvalidFileFormatException;
 
-
-import java.io.*;;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.Date;
+
+;
 
 
 public class MergeUpdate {
     private static Logger logger = Logger.getLogger(MergeUpdate.class);
+    /*Logger logger = LogManager.getRootLogger();*/
     // write your code here
 
     public static void main(String[] args) {
@@ -26,15 +32,23 @@ public class MergeUpdate {
             System.exit(1);
         }
 
-         Ini configIni = loadConfigFile(args[0]);
+
+        Ini configIni = loadConfigFile(args[0]);
         Date currentTime = new Date();
+
+        File log4jFile = new File("log4j.properties");
+        if (log4jFile.exists()){
+            PropertyConfigurator.configure(log4jFile.getAbsolutePath());
+        }else{
+            logger.info("Could not find log4j configuration " + log4jFile.toString());
+        }
+
         logger.info(currentTime.toString() + ": Starting Merge");
         MergeMarcUpdatesAndDeletes merge = new MergeMarcUpdatesAndDeletes();
         if (merge.startProcess(configIni, logger)) {
             currentTime = new Date();
             logger.info(currentTime.toString() + ": Successful Merge");
-        }
-        else {
+        } else {
             currentTime = new Date();
             logger.info(currentTime.toString() + ": Merge Failed");
         }

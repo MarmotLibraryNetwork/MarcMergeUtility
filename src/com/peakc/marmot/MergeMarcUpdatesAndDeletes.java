@@ -48,10 +48,12 @@ public class MergeMarcUpdatesAndDeletes {
 			//Expect single main MARC file
 			File mainFile = null;
 			File[] files = new File(mainFilePath).listFiles();
-			for (File file : files) {
-				if (file.getName().endsWith("mrc") || file.getName().endsWith("marc")) {
-					mainFile = file;
-					break;
+			if(files != null) {
+				for (File file : files) {
+					if (file.getName().endsWith("mrc") || file.getName().endsWith("marc")) {
+						mainFile = file;
+						break;
+					}
 				}
 			}
 
@@ -60,34 +62,50 @@ public class MergeMarcUpdatesAndDeletes {
 				//More than a one delete file
 				HashSet<File> deleteFiles = new HashSet<>();
 				files = new File(deleteFilePath).listFiles();
-				for (File file : files) {
-					if (file.getName().endsWith("mrc") || file.getName().endsWith("marc") || file.getName().endsWith("csv")) {
-						deleteFiles.add(file);
+				if(files  != null){
+					logger.debug("------------------------------");
+					logger.debug("File names to delete from:");
+					for (File file : files) {
+						if (file.getName().endsWith("mrc") || file.getName().endsWith("marc") || file.getName().endsWith("csv")) {
+							deleteFiles.add(file);
+							logger.debug(file.getName());
+						}
 					}
+					logger.debug("------------------------------");
 				}
+
 				//Expect files or directory
 				HashSet<File> updateFiles = new HashSet<>();
 				files = new File(additionsPath).listFiles();
-				for (File file : files) {
+				if(files  != null){
+					logger.debug("------------------------------");
+					logger.debug("File names to update from:");
+					for (File file : files) {
 
-					if(file.isDirectory()){
-						File[] filesInDir = new File(file.getPath()).listFiles();
-						for (File fileInDir: filesInDir){
-							validateAddMarcFile(updateFiles, fileInDir);
+						if(file.isDirectory()){
+							File[] filesInDir = new File(file.getPath()).listFiles();
+							if(filesInDir != null){
+								for (File fileInDir: filesInDir){
+									logger.debug(fileInDir.getName());
+									validateAddMarcFile(updateFiles, fileInDir);
+								}
+							}
 						}
-					}
-					else {
-						validateAddMarcFile(updateFiles, file);
-					}
+						else {
+							logger.debug(file.getName());
+							validateAddMarcFile(updateFiles, file);
+						}
 
+					}
 				}
+
 
 				if ((deleteFiles.size() + updateFiles.size()) == 0)
 					logger.error("No update or delete files were found");
 
 				if ((deleteFiles.size() + updateFiles.size()) > 0) {
-
 					HashMap<String, Record> recordsToUpdate = new HashMap<>();
+
 					for (File updateFile : updateFiles) {
 
 						try {
@@ -98,6 +116,25 @@ public class MergeMarcUpdatesAndDeletes {
 							errorOccurred = true;
 						}
 					}
+					//Log the the records to update
+					if (!recordsToUpdate.isEmpty()) {
+						logger.debug("------------------------------");
+						logger.debug("------------------------------");
+						logger.debug("Records to update.....");
+						numUpdates = 0;
+						for (Map.Entry<String, Record> entry : recordsToUpdate.entrySet()) {
+							logger.debug(entry.getKey());
+							numUpdates++;
+							/*System.out.println("Key = " + entry.getKey() + ", Value = " + entry.getValue()); */
+						}
+
+						logger.debug( "No of records updated: " + Integer.toString(numUpdates));
+						logger.debug("------------------------------");
+						logger.debug("------------------------------");
+					}
+					else
+						logger.debug("No records to update.....");
+
 
 
 					HashSet<String> recordsToDelete = new HashSet<>();
@@ -117,6 +154,20 @@ public class MergeMarcUpdatesAndDeletes {
 
 						}
 					}
+                  //Log the the records to delete
+					if (!recordsToDelete.isEmpty()) {
+						logger.debug("Records to delete.....");
+						numDeletions = 0;
+						for (String entry : recordsToDelete) {
+							logger.debug(entry);
+							numDeletions++;
+						}
+
+						logger.debug("No of records deleted: "+ Integer.toString(numDeletions));
+						logger.debug("------------------------------");
+					}
+					else
+						logger.debug("No records to delete.....");
 
 
 					String today = new SimpleDateFormat("yyyyMMdd").format(new Date());
@@ -129,20 +180,29 @@ public class MergeMarcUpdatesAndDeletes {
 						FileOutputStream marcOutputStream = new FileOutputStream(mergedFile);
 						MarcStreamWriter mainWriter = new MarcStreamWriter(marcOutputStream);
 						while (mainReader.hasNext()) {
-							curBib = mainReader.next();
-							String recordId = getRecordIdFromMarcRecord(curBib);
 
-
-							if (recordsToUpdate.containsKey(recordId)) {
-								//Write the updated record
-								mainWriter.write(recordsToUpdate.get(recordId));
-								recordsToUpdate.remove(recordId);
-								numUpdates++;
-							} else if (!recordsToDelete.contains(recordId)) {
-								//Unless the record is marked for deletion, write it
-								mainWriter.write(curBib);
-								numDeletions++;
+							try{
+								curBib = mainReader.next();
+								String recordId = getRecordIdFromMarcRecord(curBib);
+								if (recordsToUpdate.containsKey(recordId)) {
+									//Write the updated record
+									mainWriter.write(recordsToUpdate.get(recordId));
+									recordsToUpdate.remove(recordId);
+									numUpdates++;
+								} else if (!recordsToDelete.contains(recordId)) {
+									//Unless the record is marked for deletion, write it
+									mainWriter.write(curBib);
+									numDeletions++;
+								}
+							}catch (NoClassDefFoundError e){
+								System.out.print(e.getMessage());
+								logger.error("Error processing main file", e);
 							}
+
+
+
+
+
 						}
 
 						//Anything left in the updates file is new and should be added
@@ -214,10 +274,6 @@ public class MergeMarcUpdatesAndDeletes {
 							if (!mergedFile.renameTo(new File(mainFilePath))) {
 								logger.error("Unable to move merged file to main file");
 								errorOccurred = true;
-							} else {
-								logger.debug("Added " + numAdditions);
-								logger.debug("Updated " + numUpdates);
-								logger.debug("Deleted " + numDeletions);
 							}
 						}
 					}
@@ -233,7 +289,7 @@ public class MergeMarcUpdatesAndDeletes {
 			logger.error("Unknown error merging records", e);
 			errorOccurred = true;
 		}
-		return errorOccurred;
+		return !errorOccurred;
 	}
 
 	private static void validateAddMarcFile(HashSet<File> updateFiles, File file) {
@@ -242,9 +298,10 @@ public class MergeMarcUpdatesAndDeletes {
         }
 	}
 
-	private void processCsvFile(String marcEncoding, HashSet<String> recordsToDelete, File deleteFile) throws IOException {
+	private static void processCsvFile(String marcEncoding, HashSet<String> recordsToDelete, File deleteFile) throws IOException {
 
 		CSVReader reader = new CSVReader(new FileReader(deleteFile.getPath()));
+
 		String [] nextLine;
 		while ((nextLine = reader.readNext()) != null) {
 			recordsToDelete.add(nextLine[0]);
