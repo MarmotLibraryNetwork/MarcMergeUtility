@@ -41,6 +41,7 @@ public class MergeUpdate {
             PropertyConfigurator.configure(log4jFile.getAbsolutePath());
         }else{
             logger.info("Could not find log4j configuration " + log4jFile.toString());
+            System.exit(1);
         }
 
         logger.info(currentTime.toString() + ": Starting Merge");
