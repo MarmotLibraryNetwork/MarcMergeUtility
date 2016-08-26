@@ -11,8 +11,6 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.Date;
 
-;
-
 
 public class MergeUpdate {
     private static Logger logger = Logger.getLogger(MergeUpdate.class);
