@@ -9,10 +9,40 @@ import org.marc4j.MarcStreamWriter;
 import org.marc4j.marc.ControlField;
 import org.marc4j.marc.Record;
 
-
-import java.io.*;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+
+/*import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;*/
+
+/*
+import org.apache.log4j.Logger;
+import org.ini4j.Ini;
+import org.ini4j.Profile;
+import org.marc4j.*;
+import org.marc4j.marc.DataField;
+import org.marc4j.marc.Record;
+import org.marc4j.marc.Subfield;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.sql.Connection;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+* */
+
+
+
+
 
 /**
  * Merge a main marc export file with records from a delete and updates file
@@ -62,46 +92,38 @@ public class MergeMarcUpdatesAndDeletes {
 				//More than a one delete file
 				HashSet<File> deleteFiles = new HashSet<>();
 				files = new File(deleteFilePath).listFiles();
-				if(files  != null){
-					logger.debug("------------------------------");
-					logger.debug("File names to delete from:");
+				if(files  != null && files.length >0 ){
+					logger.info("File name(s) to delete from:");
 					for (File file : files) {
 						if (file.getName().endsWith("mrc") || file.getName().endsWith("marc") || file.getName().endsWith("csv")) {
 							deleteFiles.add(file);
-							logger.debug(file.getName());
+							logger.info(file.getAbsolutePath());
 						}
 					}
-					logger.debug("------------------------------");
 				}
 
 				//Expect files or directory
 				HashSet<File> updateFiles = new HashSet<>();
 				files = new File(additionsPath).listFiles();
-				if(files  != null){
-					logger.debug("------------------------------");
-					logger.debug("File names to update from:");
+				if(files  != null && files.length >0){
+					logger.info("File name(s) to update from:");
 					for (File file : files) {
 
 						if(file.isDirectory()){
 							File[] filesInDir = new File(file.getPath()).listFiles();
 							if(filesInDir != null){
 								for (File fileInDir: filesInDir){
-									logger.debug(fileInDir.getName());
+									logger.info(fileInDir.getAbsolutePath());
 									validateAddMarcFile(updateFiles, fileInDir);
 								}
 							}
 						}
 						else {
-							logger.debug(file.getName());
+							logger.info(file.getAbsolutePath());
 							validateAddMarcFile(updateFiles, file);
 						}
-
 					}
 				}
-
-
-				if ((deleteFiles.size() + updateFiles.size()) == 0)
-					logger.error("No update or delete files were found");
 
 				if ((deleteFiles.size() + updateFiles.size()) > 0) {
 					HashMap<String, Record> recordsToUpdate = new HashMap<>();
@@ -118,22 +140,18 @@ public class MergeMarcUpdatesAndDeletes {
 					}
 					//Log the the records to update
 					if (!recordsToUpdate.isEmpty()) {
-						logger.debug("------------------------------");
-						logger.debug("------------------------------");
-						logger.debug("Records to update.....");
+						logger.info("Records to update.....");
 						numUpdates = 0;
 						for (Map.Entry<String, Record> entry : recordsToUpdate.entrySet()) {
-							logger.debug(entry.getKey());
+							logger.info(entry.getKey());
 							numUpdates++;
-							/*System.out.println("Key = " + entry.getKey() + ", Value = " + entry.getValue()); */
 						}
 
-						logger.debug( "No of records updated: " + Integer.toString(numUpdates));
-						logger.debug("------------------------------");
-						logger.debug("------------------------------");
+						logger.info( "No of records to update: " + Integer.toString(numUpdates));
+						logger.info("------------------------------");
 					}
 					else
-						logger.debug("No records to update.....");
+						logger.info("No records to update.....");
 
 
 
@@ -147,40 +165,41 @@ public class MergeMarcUpdatesAndDeletes {
 								processCsvFile(marcEncoding, recordsToDelete, deleteFile);
 							}
 
-
 						} catch (Exception e) {
 							logger.error("Error processing deletes file", e);
 							errorOccurred = true;
-
 						}
 					}
-                  //Log the the records to delete
+					//Log the the records to delete
 					if (!recordsToDelete.isEmpty()) {
-						logger.debug("Records to delete.....");
+						logger.info("Records to delete.....");
 						numDeletions = 0;
 						for (String entry : recordsToDelete) {
-							logger.debug(entry);
+							logger.info(entry);
 							numDeletions++;
 						}
 
-						logger.debug("No of records deleted: "+ Integer.toString(numDeletions));
-						logger.debug("------------------------------");
+						logger.info("No of records to delete: "+ Integer.toString(numDeletions));
+						logger.info("------------------------------");
 					}
 					else
-						logger.debug("No records to delete.....");
-
+						logger.info("No records to delete.....");
 
 					String today = new SimpleDateFormat("yyyyMMdd").format(new Date());
 					File mergedFile = new File(mainFile.getPath() + "." + today + ".merged");
-					Record curBib;
+
+
+					logger.info("Merge started... pls wait");
+					numDeletions = 0;
+					numAdditions = 0;
+					numUpdates = 0;
 					try {
 						FileInputStream marcFileStream = new FileInputStream(mainFile);
 						MarcReader mainReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
-
+						Record curBib;
 						FileOutputStream marcOutputStream = new FileOutputStream(mergedFile);
 						MarcStreamWriter mainWriter = new MarcStreamWriter(marcOutputStream);
 						while (mainReader.hasNext()) {
-
 							try{
 								curBib = mainReader.next();
 								String recordId = getRecordIdFromMarcRecord(curBib);
@@ -189,113 +208,148 @@ public class MergeMarcUpdatesAndDeletes {
 									mainWriter.write(recordsToUpdate.get(recordId));
 									recordsToUpdate.remove(recordId);
 									numUpdates++;
+									logger.info("Updating... " + recordId);
+								}else if(recordsToDelete.contains(recordId)){
+									 numDeletions++;
+									logger.info("Deleting..." + recordId);
 								} else if (!recordsToDelete.contains(recordId)) {
 									//Unless the record is marked for deletion, write it
 									mainWriter.write(curBib);
-									numDeletions++;
 								}
-							}catch (NoClassDefFoundError e){
-								System.out.print(e.getMessage());
-								logger.error("Error processing main file", e);
+							}catch(NoClassDefFoundError ex){
+								logger.error(ex.getMessage());
+
 							}
-
-
-
-
-
 						}
 
 						//Anything left in the updates file is new and should be added
 						for (Record newMarc : recordsToUpdate.values()) {
 							mainWriter.write(newMarc);
+							logger.info("Adding...." + getRecordIdFromMarcRecord(newMarc));
 							numAdditions++;
 						}
 						mainWriter.close();
 						marcFileStream.close();
+
+						logger.info("Additions: " + numAdditions);
+						logger.info("Deletions: " + numDeletions);
+						logger.info("Updates: " + numUpdates);
+
+						logger.info("Update SUCCESSFUL");
 					} catch (Exception e) {
 
 						logger.error("Error processing main file", e);
 						errorOccurred = true;
 					}
 
-					if (!new File(backupPath).exists()) {
-						if (!new File(backupPath).mkdirs()) {
-							logger.error("Could not create backup path");
-							errorOccurred = true;
-
-						}
-					}
+					//if no processing error occurred go ahead and backup original files
 					if (!errorOccurred) {
-						for (File updateFile : updateFiles) {
-							try {
-								//Move to the backup directory
-								Util.copyFileNoOverwrite(updateFile, new File(backupPath));
-							} catch (IOException e) {
-								logger.error("Unable to move updates file " + updateFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + updateFile.getName());
-								errorOccurred = true;
-							}
 
-							if (!errorOccurred) {
-								//safely delete the orginal file
-								updateFile.delete();
+						for (File updateFile : updateFiles) {
+							//Move to the backup directory
+							if(!BackUpFile(updateFile, backupPath)){
+								logger.error("Unable to move update file " + updateFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + updateFile.getName());
 							}
 						}
 
 						for (File deleteFile : deleteFiles) {
-							//Move to the backup directory
-							try {
-								Util.copyFileNoOverwrite(deleteFile, new File(backupPath));
-							} catch (IOException e) {
-								logger.error("Unable to move delete file " + deleteFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + deleteFile.getName());
-								errorOccurred = true;
-							}
-							if (!errorOccurred) {
-								//safely delete the orginal file
-								deleteFile.delete();
+						//Move to the backup directory
+							if(!BackUpFile(deleteFile, backupPath)){
+								logger.error("Unable to move update file " + deleteFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + deleteFile.getName());
 							}
 						}
-					}
 
-
-					if (!errorOccurred) {
-						mainFilePath = mainFile.getPath();
-
-						try {
-							Util.copyFileNoOverwrite(mainFile, new File(backupPath));
-						} catch (IOException e) {
+						//Move the original maim file into back up folder
+						if(BackUpFile(mainFile, backupPath)){
+							//rename the merged file to the main file
+							if (!mergedFile.renameTo(new File(mainFile.getPath()))) {
+								logger.error("Unable to rename merged (updated) file to main file. Manual renaming may be necessary!");
+							}
+						}
+						else{
 							logger.error("Unable to move main file " + mainFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + mainFile.getName());
-							errorOccurred = true;
-						}
-
-						if (!errorOccurred) {
-							mainFile.delete();
-
-							//Move the merged file to the main file
-							if (!mergedFile.renameTo(new File(mainFilePath))) {
-								logger.error("Unable to move merged file to main file");
-								errorOccurred = true;
-							}
 						}
 					}
+
 				} else {
-					logger.error("No files were found in " + mainFilePath);
+					logger.info("No update or delete files were found");
 					errorOccurred = true;
 				}
 			} else {
-				logger.error("Did not find file to merge into");
+				logger.info("Did not find file to merge into");
+				logger.info("No master file was found in " + mainFilePath);
 				errorOccurred = true;
 			}
 		} catch (Exception e) {
 			logger.error("Unknown error merging records", e);
 			errorOccurred = true;
 		}
+
+		if(errorOccurred) {
+			//cleanup temp files
+			//if failure occurs
+			String today = new SimpleDateFormat("yyyyMMdd").format(new Date());
+			File tmpMergedFile = new File(mainFilePath + "." + today + ".merged");
+			if(tmpMergedFile.exists())
+				tmpMergedFile.delete();
+		}
+
 		return !errorOccurred;
 	}
 
+	private static boolean BackUpFile(File fileToMove, String backupPath) {
+		boolean fileBackedUp;
+		try {
+			fileBackedUp = ArchiveFile(fileToMove, backupPath);
+		} catch (IOException e) {
+			return false;
+		}
+
+		return fileBackedUp;
+	}
+	//returns true if file is safely moved to backup location
+	private static boolean ArchiveFile(File fileToMove, String backUpPath)throws IOException {
+
+		boolean fileMoved = false;
+
+		if (new File(backUpPath).exists() || new File(backUpPath).mkdirs()) {
+
+			try {
+				fileMoved = fileToMove.renameTo(new File(backUpPath));
+			} catch (Exception e) {
+				fileMoved = false;
+			} finally {
+				if (!fileMoved) {
+					//try copying over then deleting the original
+					try {
+						CopyNoOverwriteResult fileCopiedRes = Util.copyFileNoOverwrite(fileToMove, new File(backUpPath));
+						fileToMove.delete();
+						fileMoved = true;
+					} catch (IOException e) {
+						//unable to copy over the file
+						throw new IOException("Unable to backup file :" + fileToMove.getAbsolutePath() + "to " + backUpPath);
+					}
+				}
+			}
+		} else {
+			throw new IOException("BackUp folder is non existent or cannot be created!");
+		}
+
+
+		return fileMoved;
+	}
+
+
+
+
+
+
+
+
 	private static void validateAddMarcFile(HashSet<File> updateFiles, File file) {
 		if (file.getName().endsWith("mrc") || file.getName().endsWith("marc") || file.getName().endsWith("csv")) {
-            updateFiles.add(file);
-        }
+			updateFiles.add(file);
+		}
 	}
 
 	private static void processCsvFile(String marcEncoding, HashSet<String> recordsToDelete, File deleteFile) throws IOException {
@@ -314,11 +368,11 @@ public class MergeMarcUpdatesAndDeletes {
 		MarcReader deletesReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
 
 		while (deletesReader.hasNext()) {
-            Record curBib = deletesReader.next();
-            String recordId = getRecordIdFromMarcRecord(curBib);
-            if (recordId != null)
-                recordsToDelete.add(recordId);
-        }
+			Record curBib = deletesReader.next();
+			String recordId = getRecordIdFromMarcRecord(curBib);
+			if (recordId != null)
+				recordsToDelete.add(recordId);
+		}
 
 
 		marcFileStream.close();
@@ -330,25 +384,22 @@ public class MergeMarcUpdatesAndDeletes {
 
 		//Read a list of records in the updates file
 		while (updatesReader.hasNext()) {
-            Record curBib = updatesReader.next();
-            String recordId = getRecordIdFromMarcRecord(curBib);
+			Record curBib = updatesReader.next();
+			String recordId = getRecordIdFromMarcRecord(curBib);
 
-            if (recordsToUpdate != null)
-                recordsToUpdate.put(recordId, curBib);
-        }
+			if (recordsToUpdate != null)
+				recordsToUpdate.put(recordId, curBib);
+		}
 		marcFileStream.close();
 	}
 
 
 	private String getRecordIdFromMarcRecord(Record marcRecord) {
 
-		recordNumberPrefix="";
 		List<ControlField> recordIdField = getDataFields(marcRecord, recordNumberTag);
-		//Make sure we only get one identifier
-		for (ControlField curRecordField : recordIdField) {
+		if (recordIdField != null)
+			return recordIdField.get(0).getData();
 
-			return  curRecordField.getData();
-		}
 		return null;
 	}
 
@@ -363,9 +414,5 @@ public class MergeMarcUpdatesAndDeletes {
 		}
 		return variableFieldsReturn;
 	}
-
-
-
-
 }
 
