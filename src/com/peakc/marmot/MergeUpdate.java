@@ -11,8 +11,6 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.Date;
 
-;
-
 
 public class MergeUpdate {
     private static Logger logger = Logger.getLogger(MergeUpdate.class);
@@ -41,6 +39,7 @@ public class MergeUpdate {
             PropertyConfigurator.configure(log4jFile.getAbsolutePath());
         }else{
             logger.info("Could not find log4j configuration " + log4jFile.toString());
+            System.exit(1);
         }
 
         logger.info(currentTime.toString() + ": Starting Merge");

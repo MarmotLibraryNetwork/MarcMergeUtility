@@ -62,46 +62,40 @@ public class MergeMarcUpdatesAndDeletes {
 				//More than a one delete file
 				HashSet<File> deleteFiles = new HashSet<>();
 				files = new File(deleteFilePath).listFiles();
-				if(files  != null){
-					logger.debug("------------------------------");
-					logger.debug("File names to delete from:");
+				if(files  != null && files.length >0 ){
+					logger.info("File names to delete from:");
 					for (File file : files) {
 						if (file.getName().endsWith("mrc") || file.getName().endsWith("marc") || file.getName().endsWith("csv")) {
 							deleteFiles.add(file);
-							logger.debug(file.getName());
+							logger.info(file.getAbsolutePath());
 						}
 					}
-					logger.debug("------------------------------");
 				}
 
 				//Expect files or directory
 				HashSet<File> updateFiles = new HashSet<>();
 				files = new File(additionsPath).listFiles();
-				if(files  != null){
-					logger.debug("------------------------------");
-					logger.debug("File names to update from:");
+				if(files  != null && files.length >0){
+					logger.info("------------------------------");
+					logger.info("File names to update from:");
 					for (File file : files) {
 
 						if(file.isDirectory()){
 							File[] filesInDir = new File(file.getPath()).listFiles();
 							if(filesInDir != null){
 								for (File fileInDir: filesInDir){
-									logger.debug(fileInDir.getName());
+									logger.info(fileInDir.getAbsolutePath());
 									validateAddMarcFile(updateFiles, fileInDir);
 								}
 							}
 						}
 						else {
-							logger.debug(file.getName());
+							logger.info(file.getName());
 							validateAddMarcFile(updateFiles, file);
 						}
 
 					}
 				}
-
-
-				if ((deleteFiles.size() + updateFiles.size()) == 0)
-					logger.error("No update or delete files were found");
 
 				if ((deleteFiles.size() + updateFiles.size()) > 0) {
 					HashMap<String, Record> recordsToUpdate = new HashMap<>();
@@ -118,22 +112,18 @@ public class MergeMarcUpdatesAndDeletes {
 					}
 					//Log the the records to update
 					if (!recordsToUpdate.isEmpty()) {
-						logger.debug("------------------------------");
-						logger.debug("------------------------------");
-						logger.debug("Records to update.....");
+						logger.info("Records to update.....");
 						numUpdates = 0;
 						for (Map.Entry<String, Record> entry : recordsToUpdate.entrySet()) {
-							logger.debug(entry.getKey());
+							logger.info(entry.getKey());
 							numUpdates++;
-							/*System.out.println("Key = " + entry.getKey() + ", Value = " + entry.getValue()); */
 						}
 
-						logger.debug( "No of records updated: " + Integer.toString(numUpdates));
-						logger.debug("------------------------------");
-						logger.debug("------------------------------");
+						logger.info( "No of records to update: " + Integer.toString(numUpdates));
+						logger.info("------------------------------");
 					}
 					else
-						logger.debug("No records to update.....");
+						logger.info("No records to update.....");
 
 
 
@@ -156,23 +146,25 @@ public class MergeMarcUpdatesAndDeletes {
 					}
                   //Log the the records to delete
 					if (!recordsToDelete.isEmpty()) {
-						logger.debug("Records to delete.....");
+						logger.info("Records to delete.....");
 						numDeletions = 0;
 						for (String entry : recordsToDelete) {
-							logger.debug(entry);
+							logger.info(entry);
 							numDeletions++;
 						}
 
-						logger.debug("No of records deleted: "+ Integer.toString(numDeletions));
-						logger.debug("------------------------------");
+						logger.info("No of records to delete: "+ Integer.toString(numDeletions));
+						logger.info("------------------------------");
 					}
 					else
-						logger.debug("No records to delete.....");
-
+						logger.info("No records to delete.....");
 
 					String today = new SimpleDateFormat("yyyyMMdd").format(new Date());
 					File mergedFile = new File(mainFile.getPath() + "." + today + ".merged");
 					Record curBib;
+
+					logger.info("Merge started... pls wait");
+
 					try {
 						FileInputStream marcFileStream = new FileInputStream(mainFile);
 						MarcReader mainReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
@@ -180,8 +172,6 @@ public class MergeMarcUpdatesAndDeletes {
 						FileOutputStream marcOutputStream = new FileOutputStream(mergedFile);
 						MarcStreamWriter mainWriter = new MarcStreamWriter(marcOutputStream);
 						while (mainReader.hasNext()) {
-
-							try{
 								curBib = mainReader.next();
 								String recordId = getRecordIdFromMarcRecord(curBib);
 								if (recordsToUpdate.containsKey(recordId)) {
@@ -194,15 +184,6 @@ public class MergeMarcUpdatesAndDeletes {
 									mainWriter.write(curBib);
 									numDeletions++;
 								}
-							}catch (NoClassDefFoundError e){
-								System.out.print(e.getMessage());
-								logger.error("Error processing main file", e);
-							}
-
-
-
-
-
 						}
 
 						//Anything left in the updates file is new and should be added
@@ -212,6 +193,8 @@ public class MergeMarcUpdatesAndDeletes {
 						}
 						mainWriter.close();
 						marcFileStream.close();
+
+						logger.info("Update Successfull!!");
 					} catch (Exception e) {
 
 						logger.error("Error processing main file", e);
@@ -278,11 +261,12 @@ public class MergeMarcUpdatesAndDeletes {
 						}
 					}
 				} else {
-					logger.error("No files were found in " + mainFilePath);
+					logger.info("No update or delete files were found");
 					errorOccurred = true;
 				}
 			} else {
 				logger.error("Did not find file to merge into");
+				logger.error("No files were found in " + mainFilePath);
 				errorOccurred = true;
 			}
 		} catch (Exception e) {
@@ -342,13 +326,10 @@ public class MergeMarcUpdatesAndDeletes {
 
 	private String getRecordIdFromMarcRecord(Record marcRecord) {
 
-		recordNumberPrefix="";
 		List<ControlField> recordIdField = getDataFields(marcRecord, recordNumberTag);
-		//Make sure we only get one identifier
-		for (ControlField curRecordField : recordIdField) {
+		if (recordIdField != null)
+			return recordIdField.get(0).getData();
 
-			return  curRecordField.getData();
-		}
 		return null;
 	}
 
