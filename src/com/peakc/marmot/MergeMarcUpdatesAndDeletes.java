@@ -161,14 +161,14 @@ public class MergeMarcUpdatesAndDeletes {
 
 					String today = new SimpleDateFormat("yyyyMMdd").format(new Date());
 					File mergedFile = new File(mainFile.getPath() + "." + today + ".merged");
-					Record curBib;
+
 
 					logger.info("Merge started... pls wait");
 
 					try {
 						FileInputStream marcFileStream = new FileInputStream(mainFile);
 						MarcReader mainReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
-
+						Record curBib;
 						FileOutputStream marcOutputStream = new FileOutputStream(mergedFile);
 						MarcStreamWriter mainWriter = new MarcStreamWriter(marcOutputStream);
 						while (mainReader.hasNext()) {
@@ -273,6 +273,16 @@ public class MergeMarcUpdatesAndDeletes {
 			logger.error("Unknown error merging records", e);
 			errorOccurred = true;
 		}
+
+		if(errorOccurred) {
+			//cleanup temp files
+			//if failure occurs
+			String today = new SimpleDateFormat("yyyyMMdd").format(new Date());
+			File tmpMergedFile = new File(mainFilePath + "." + today + ".merged");
+			if(tmpMergedFile.exists())
+				tmpMergedFile.delete();
+		}
+
 		return !errorOccurred;
 	}
 
