@@ -203,6 +203,9 @@ public class MergeMarcUpdatesAndDeletes {
 							try{
 								curBib = mainReader.next();
 								String recordId = getRecordIdFromMarcRecord(curBib);
+								if(recordId == null)
+									continue;
+
 								if (recordsToUpdate.containsKey(recordId)) {
 									//Write the updated record
 									mainWriter.write(recordsToUpdate.get(recordId));
@@ -387,7 +390,7 @@ public class MergeMarcUpdatesAndDeletes {
 			Record curBib = updatesReader.next();
 			String recordId = getRecordIdFromMarcRecord(curBib);
 
-			if (recordsToUpdate != null)
+			if (recordsToUpdate != null && recordId != null)
 				recordsToUpdate.put(recordId, curBib);
 		}
 		marcFileStream.close();
@@ -397,7 +400,8 @@ public class MergeMarcUpdatesAndDeletes {
 	private String getRecordIdFromMarcRecord(Record marcRecord) {
 
 		List<ControlField> recordIdField = getDataFields(marcRecord, recordNumberTag);
-		if (recordIdField != null)
+
+		if (recordIdField != null && recordIdField.size() > 0  )
 			return recordIdField.get(0).getData();
 
 		return null;
