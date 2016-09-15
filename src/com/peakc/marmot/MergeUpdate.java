@@ -1,5 +1,7 @@
 package com.peakc.marmot;
 
+import org.apache.log4j.Appender;
+import org.apache.log4j.FileAppender;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import org.ini4j.Ini;
@@ -10,6 +12,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Date;
+import java.util.Enumeration;
 
 
 public class MergeUpdate {
@@ -33,7 +36,6 @@ public class MergeUpdate {
 
         Ini configIni = loadConfigFile(args[0]);
         Date currentTime = new Date();
-
         File log4jFile = new File("log4j.properties");
         if (log4jFile.exists()){
             PropertyConfigurator.configure(log4jFile.getAbsolutePath());
@@ -44,13 +46,24 @@ public class MergeUpdate {
 
         logger.info(currentTime.toString() + ": Starting Merge");
         MergeMarcUpdatesAndDeletes merge = new MergeMarcUpdatesAndDeletes();
-        if (merge.startProcess(configIni, logger)) {
+
+        try{
+            if (merge.startProcess(configIni, logger)) {
+                currentTime = new Date();
+                logger.info(currentTime.toString() + ": Successful Merge");
+            } else {
+                currentTime = new Date();
+                logger.info(currentTime.toString() + ": Merge Failed");
+            }
+        }catch ( Exception ex) {
             currentTime = new Date();
-            logger.info(currentTime.toString() + ": Successful Merge");
-        } else {
-            currentTime = new Date();
+            logger.error(ex);
             logger.info(currentTime.toString() + ": Merge Failed");
+
         }
+
+
+
 
     }
     private static Ini loadConfigFile(String filename){
