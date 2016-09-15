@@ -65,7 +65,12 @@ public class MergeMarcUpdatesAndDeletes {
 				HashSet<File> deleteFiles = new HashSet<>();
 				//Expect files or directory
 				HashSet<File> updateFiles = new HashSet<>();
-				files = new File(changesPath).listFiles();
+				File changesFile = new File(changesPath);
+				if (!changesFile.exists()){
+					logger.error("The changes path " + changesPath + " does not exist");
+					return false;
+				}
+				files = changesFile.listFiles();
 				if (files != null && files.length > 0) {
 					for (File file : files) {
 						if (file.isDirectory()) {
