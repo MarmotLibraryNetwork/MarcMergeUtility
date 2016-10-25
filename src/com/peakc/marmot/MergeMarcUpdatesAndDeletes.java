@@ -21,87 +21,137 @@ import java.util.*;
  * User: Mark Noble
  * Date: 12/31/2014
  * Time: 11:45 AM
- *
+ * <p>
  * Updated by Ayub Jabedo
  * Date: 8/27/2016
- *
  */
-public class MergeMarcUpdatesAndDeletes {
+class MergeMarcUpdatesAndDeletes {
 	private String recordNumberTag = "";
-	private String recordNumberPrefix = "";
-	private String recordNumberSubfield="";
+	private String recordNumberSubfield = "";
+	private Logger logger;
 
-	public boolean startProcess(Ini configIni, Logger logger) throws Exception {
+	boolean startProcess(Ini configIni, Logger logger) throws Exception {
+		this.logger = logger;
 
 		String mainFilePath = configIni.get("MergeUpdate", "marcPath");
 		String backupPath = configIni.get("MergeUpdate", "backupPath");
 		String marcEncoding = configIni.get("MergeUpdate", "marcEncoding");
 		recordNumberTag = configIni.get("MergeUpdate", "recordNumberTag");
-		recordNumberPrefix = configIni.get("MergeUpdate", "recordNumberPrefix");
 		recordNumberSubfield = configIni.get("MergeUpdate", "recordNumberSubfield");
 		String changesPath = configIni.get("MergeUpdate", "changesPath");
+		String deleteFilePath = configIni.get("MergeUpdate", "deleteFilePath");
 
-		int numUpdates = 0;
-		int numDeletions = 0;
-		int numAdditions = 0;
+		int numUpdates;
+		int numDeletions;
+		int numAdditions;
 		boolean errorOccurred = false;
 
 		try {
 
-			//Expect single main MARC file
-			File mainFile = null;
-			File[] files = new File(mainFilePath).listFiles();
-			if (files != null) {
-				for (File file : files) {
-					if (IsValidMarcFile(file)) {
-						mainFile = file;
-						break;
+			//Try to get the main file
+			File mainFile = new File(mainFilePath);
+
+			HashSet<File> deleteFiles = new HashSet<>();
+			HashSet<File> updateFiles = new HashSet<>();
+
+			if (mainFile.isDirectory()) {
+				File[] files = new File(mainFilePath).listFiles();
+				mainFile = null;
+				if (files != null) {
+					for (File file : files) {
+						if (isDeleteFile(file)){
+							deleteFiles.add(file);
+						}else if (isUpdateFile(file, false)){
+							updateFiles.add(file);
+						}else if (isValidMarcFile(file)) {
+							if (mainFile == null){
+								mainFile = file;
+							}else{
+								logger.error("More than one update file was found");
+								System.exit(1);
+							}
+						}
 					}
+				}
+			} else {
+				if (!isValidMarcFile(mainFile)) {
+					mainFile = null;
 				}
 			}
 
 			if (mainFile != null) {
-				//More than a one delete file
-				HashSet<File> deleteFiles = new HashSet<>();
-				//Expect files or directory
-				HashSet<File> updateFiles = new HashSet<>();
-				File changesFile = new File(changesPath);
-				if (!changesFile.exists()){
-					logger.error("The changes path " + changesPath + " does not exist");
-					return false;
-				}
-				files = changesFile.listFiles();
-				if (files != null && files.length > 0) {
-					for (File file : files) {
-						if (file.isDirectory()) {
-							File[] filesInDir = new File(file.getPath()).listFiles(); // single folder, non recursive
-							if (filesInDir != null) {
-								validateAddDeleteFiles(deleteFiles, updateFiles, filesInDir);
+				//Load changes from changes path if necessary
+				if (changesPath != null && changesPath.length() > 0) {
+					File changesFile = new File(changesPath);
+					if (!changesFile.exists()) {
+						logger.error("The changes path " + changesPath + " does not exist");
+						return false;
+					}
+					File[] files;
+					if (changesFile.isDirectory()) {
+						files = changesFile.listFiles();
+					} else {
+						files = new File[1];
+						files[0] = changesFile;
+					}
+					if (files != null && files.length > 0) {
+						for (File file : files) {
+							if (!file.equals(mainFile)) {
+								if (file.isDirectory()) {
+									File[] filesInDir = file.listFiles(); // single folder, non recursive
+									if (filesInDir != null) {
+										validateAddDeleteFiles(deleteFiles, updateFiles, filesInDir, true);
+									}
+								} else {
+									validateAddUpdateDeleteFile(deleteFiles, updateFiles, file, true);
+								}
 							}
-						} else {
-							validateAddUpdateDeleteFile(deleteFiles, updateFiles, file);
 						}
 					}
-
-					if (!updateFiles.isEmpty()) {
-						logger.info("Files to update from:");
-						for (File file : updateFiles)
-							logger.info(file.getAbsolutePath());
-					}
-					if (!deleteFiles.isEmpty()) {
-						logger.info("Files to delete from:");
-						for (File file : deleteFiles)
-							logger.info(file.getAbsolutePath());
-					}
-
 				}
 
+				//Load files to delete if necessary
+				if (deleteFilePath != null && deleteFilePath.length() > 0){
+					File deleteFile = new File(deleteFilePath);
+					if (deleteFile.exists()) {
+						if (deleteFile.isDirectory()) {
+							File[] filesInDir = deleteFile.listFiles(); // single folder, non recursive
+							if (filesInDir != null) {
+								for (File file : filesInDir) {
+									if (isValidMarcFile(file) || file.getName().endsWith("csv")) {
+										deleteFiles.add(file);
+									}
+								}
+							}
+						} else {
+							if (isValidMarcFile(deleteFile) || deleteFile.getName().endsWith("csv")) {
+								deleteFiles.add(deleteFile);
+							}
+						}
+					}
+				}
+
+				//Display what we are going to update and delete from
+				if (!updateFiles.isEmpty()) {
+					logger.info("Files to update from:");
+					for (File file : updateFiles)
+						logger.info(file.getAbsolutePath());
+				}
+				if (!deleteFiles.isEmpty()) {
+					logger.info("Files to delete from:");
+					for (File file : deleteFiles) {
+						logger.info(file.getAbsolutePath());
+					}
+				}
+
+				//Process the files
 				if ((deleteFiles.size() + updateFiles.size()) > 0) {
 					HashMap<String, Record> recordsToUpdate = new HashMap<>();
-					if (updateFiles.isEmpty())
+					if (updateFiles.isEmpty()) {
 						logger.info("No records to update.....");
-					else
+					}else {
 						logger.info("Processing records to update. Please wait.....");
+					}
 
 					for (File updateFile : updateFiles) {
 						try {
@@ -122,10 +172,10 @@ public class MergeMarcUpdatesAndDeletes {
 
 					for (File deleteFile : deleteFiles) {
 						try {
-							if (IsValidMarcFile(deleteFile)) {
+							if (isValidMarcFile(deleteFile)) {
 								processMarcFile(marcEncoding, recordsToDelete, deleteFile);
 							} else if (deleteFile.getName().endsWith("csv")) {
-								processCsvFile(marcEncoding, recordsToDelete, deleteFile);
+								processCsvFile(recordsToDelete, deleteFile);
 							}
 							for (String entry : recordsToDelete) {
 								logger.info(entry);
@@ -198,20 +248,20 @@ public class MergeMarcUpdatesAndDeletes {
 
 						for (File updateFile : updateFiles) {
 							//Move to the backup directory
-							if (!BackUpFile(updateFile, backupPath)) {
+							if (!backUpFile(updateFile, backupPath)) {
 								logger.error("Unable to move update file " + updateFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + updateFile.getName());
 							}
 						}
 
 						for (File deleteFile : deleteFiles) {
 							//Move to the backup directory
-							if (!BackUpFile(deleteFile, backupPath)) {
+							if (!backUpFile(deleteFile, backupPath)) {
 								logger.error("Unable to move update file " + deleteFile.getAbsolutePath() + " to backup directory " + backupPath + "/" + deleteFile.getName());
 							}
 						}
 
 						//Move the original maim file into back up folder
-						if (BackUpFile(mainFile, backupPath)) {
+						if (backUpFile(mainFile, backupPath)) {
 							//rename the merged file to the main file
 							if (!mergedFile.renameTo(new File(mainFile.getPath()))) {
 								logger.error("Unable to rename merged (updated) file to main file. Manual renaming may be necessary!");
@@ -240,45 +290,50 @@ public class MergeMarcUpdatesAndDeletes {
 			//if failure occurs
 			String today = new SimpleDateFormat("yyyyMMdd").format(new Date());
 			File tmpMergedFile = new File(mainFilePath + "." + today + ".merged");
-			if (tmpMergedFile.exists())
-				tmpMergedFile.delete();
+			if (tmpMergedFile.exists()) {
+				if (!tmpMergedFile.delete()){
+					logger.error("Could not delete merged file");
+				}
+			}
 		}
 
 		return !errorOccurred;
 	}
 
-	private void validateAddDeleteFiles(HashSet<File> deleteFiles, HashSet<File> updateFiles, File[] files) {
-		for (File file: files) {
-			 if(file.isFile())
-				 validateAddUpdateDeleteFile(deleteFiles, updateFiles, file);
+	private void validateAddDeleteFiles(HashSet<File> deleteFiles, HashSet<File> updateFiles, File[] files, boolean changesPathSet) {
+		for (File file : files) {
+			if (file.isFile()) {
+				validateAddUpdateDeleteFile(deleteFiles, updateFiles, file, changesPathSet);
+			}
 
-			 if(file.isDirectory()){
-			 	//recurse???
-			 }
+			//TODO: Optionally recurse directories
+			//if (file.isDirectory()) {
 
-
-        }
+			//}
+		}
 	}
 
-	private void validateAddUpdateDeleteFile(HashSet<File> deleteFiles, HashSet<File> updateFiles, File file) {
-		if(IsDeleteFile(file))
-            deleteFiles.add(file);
-        else if (IsUpdateFile(file))
-            updateFiles.add(file);
+	private void validateAddUpdateDeleteFile(HashSet<File> deleteFiles, HashSet<File> updateFiles, File file, boolean changesPathSet) {
+		if (isDeleteFile(file)) {
+			deleteFiles.add(file);
+		}else if (isUpdateFile(file, changesPathSet)) {
+			updateFiles.add(file);
+		}
 	}
 
-	private static boolean BackUpFile(File fileToMove, String backupPath) {
+	private boolean backUpFile(File fileToMove, String backupPath) {
 		boolean fileBackedUp;
 		try {
-			fileBackedUp = ArchiveFile(fileToMove, backupPath);
+			fileBackedUp = archiveFile(fileToMove, backupPath);
 		} catch (IOException e) {
 			return false;
 		}
 
 		return fileBackedUp;
 	}
+
 	//returns true if file is safely moved to backup location
-	private static boolean ArchiveFile(File fileToMove, String backUpPath)throws IOException {
+	private boolean archiveFile(File fileToMove, String backUpPath) throws IOException {
 
 		boolean fileMoved = false;
 
@@ -291,13 +346,11 @@ public class MergeMarcUpdatesAndDeletes {
 			} finally {
 				if (!fileMoved) {
 					//try copying over then deleting the original
-					try {
-						CopyNoOverwriteResult fileCopiedRes = Util.copyFileNoOverwrite(fileToMove, new File(backUpPath));
-						fileToMove.delete();
+					Util.copyFileNoOverwrite(fileToMove, new File(backUpPath));
+					if (fileToMove.delete()) {
 						fileMoved = true;
-					} catch (IOException e) {
-						//unable to copy over the file
-						throw new IOException("Unable to backup file :" + fileToMove.getAbsolutePath() + "to " + backUpPath);
+					}else{
+						logger.warn("Could not remove file " + fileToMove.getAbsolutePath() + " after copying");
 					}
 				}
 			}
@@ -309,60 +362,50 @@ public class MergeMarcUpdatesAndDeletes {
 		return fileMoved;
 	}
 
-
-
-
-
-
-
-
-	private static void validateAddMarcFile(HashSet<File> updateFiles, File file) {
-		if (IsValidMarcFile(file)) {
-			updateFiles.add(file);
-		}
+	/**
+	 *
+	 * @param file            The file to check
+	 * @return                Whether or not the file contains deletes
+	 */
+	private static boolean isDeleteFile(File file) {
+		return (isValidMarcFile(file) || file.getName().endsWith("csv"))
+				&& (file.getName().toLowerCase().contains("del"));
 	}
 
-	private static boolean IsDeleteFile(File file){
-
-		if ( (IsValidMarcFile(file) || file.getName().endsWith("csv"))
-				&& file.getName().toLowerCase().contains("del"))
-			return  true;
-
-		return false;
+	/**
+	 *
+	 * @param file            The file to check
+	 * @param changesPathSet  Whether or not we are using a separate changes path.  If we are, we don't check naming conventions
+	 * @return                Whether or not the file contains new/updated records
+	 */
+	private static boolean isUpdateFile(File file, boolean changesPathSet) {
+		return isValidMarcFile(file)
+				&& (changesPathSet
+						|| file.getName().toLowerCase().contains("update")
+						|| file.getName().toLowerCase().contains("add")
+						|| file.getName().toLowerCase().contains("new")
+				);
 	}
 
-	private static boolean IsUpdateFile(File file){
-
-		if (IsValidMarcFile(file)
-				&& ( file.getName().toLowerCase().contains("update") || file.getName().toLowerCase().contains("add")  || file.getName().toLowerCase().contains("new") ))
-			return  true;
-
-		return false;
-	}
-
-	private static boolean IsValidMarcFile(File file) {
+	private static boolean isValidMarcFile(File file) {
 		return file.getName().endsWith("mrc") || file.getName().endsWith("marc");
 	}
 
 
-	private static void processCsvFile(String marcEncoding, HashSet<String> recordsToDelete, File deleteFile) throws IOException {
+	private static void processCsvFile(HashSet<String> recordsToDelete, File deleteFile) throws IOException {
 
 		CSVReader reader = new CSVReader(new FileReader(deleteFile.getPath()));
 
-		String [] nextLine;
+		String[] nextLine;
 		while ((nextLine = reader.readNext()) != null) {
 			recordsToDelete.add(nextLine[0]);
 		}
 
 		reader.close();
 	}
+
 	private void processMarcFile(String marcEncoding, HashSet<String> recordsToDelete, File deleteFile) throws Exception {
-		FileInputStream marcFileStream = null;
-		try {
-			marcFileStream = new FileInputStream(deleteFile);
-		} catch (FileNotFoundException ex) {
-			throw ex;
-		}
+		FileInputStream marcFileStream = new FileInputStream(deleteFile);
 
 		MarcReader deletesReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
 		while (deletesReader.hasNext()) {
@@ -372,77 +415,54 @@ public class MergeMarcUpdatesAndDeletes {
 				recordsToDelete.add(recordId);
 		}
 
-		try {
-			marcFileStream.close();
-		} catch (IOException ex){
-			throw  ex;
-		}
+		marcFileStream.close();
 
 
 	}
 
 	private void processMarcFile(String marcEncoding, HashMap<String, Record> recordsToUpdate, File updateFile) throws Exception {
-
-
-		FileInputStream marcFileStream = null;
-		try {
-			marcFileStream = new FileInputStream(updateFile);
-		} catch (FileNotFoundException ex) {
-			throw ex;
-		}
+		FileInputStream marcFileStream = new FileInputStream(updateFile);
 		MarcReader updatesReader = new MarcPermissiveStreamReader(marcFileStream, true, true, marcEncoding);
-
 
 		//Read a list of records in the updates file
 		while (updatesReader.hasNext()) {
 			Record curBib = updatesReader.next();
 			String recordId = getRecordIdFromMarcRecord(curBib);
 
-			if (recordsToUpdate != null && recordId != null)
+			if (recordsToUpdate != null && recordId != null) {
 				recordsToUpdate.put(recordId, curBib);
+			}
 		}
-
 
 		try {
 			marcFileStream.close();
-		} catch (IOException ex){
-			throw  ex;
+		} catch (IOException ex) {
+			throw ex;
 		}
-
-
-
-
-
-
-
-
 	}
 
 
 	private String getRecordIdFromMarcRecord(Record marcRecord) {
 		//if a subfield is found in ini file, then use it
 		//no subfield check for record tag ids betwee 001 to 010
-		int tagID =	Integer.parseInt(recordNumberTag);
-		if(recordNumberSubfield.isEmpty() || tagID < 10){
+		int tagID = Integer.parseInt(recordNumberTag);
+		if (tagID < 10) {
 			List<ControlField> recordIdField = getControlFields(marcRecord, recordNumberTag);
-			if (recordIdField != null && recordIdField.size() > 0  )
+			if (recordIdField != null && recordIdField.size() > 0) {
 				return recordIdField.get(0).getData();
-
-		}else{
+			}
+		} else {
 			List<DataField> recordIdField1 = getDataFields(marcRecord, recordNumberTag);
 			//Make sure we only get one ils identifier
 			for (DataField curRecordField : recordIdField1) {
 				Subfield subfield = curRecordField.getSubfield(recordNumberSubfield.toCharArray()[0]);
 				if (subfield != null) {
-					return  subfield.getData();
+					return subfield.getData();
 				}
 			}
 		}
 
-		return  null;
-
-
-
+		return null;
 	}
 
 	private List<DataField> getDataFields(Record marcRecord, String tag) {
@@ -459,9 +479,9 @@ public class MergeMarcUpdatesAndDeletes {
 	private List<ControlField> getControlFields(Record marcRecord, String tag) {
 		List variableFields = marcRecord.getVariableFields(tag);
 		List<ControlField> variableFieldsReturn = new ArrayList<>();
-		for (Object variableField : variableFields){
-			if (variableField instanceof ControlField){
-				variableFieldsReturn.add((ControlField)variableField);
+		for (Object variableField : variableFields) {
+			if (variableField instanceof ControlField) {
+				variableFieldsReturn.add((ControlField) variableField);
 			}
 		}
 		return variableFieldsReturn;
